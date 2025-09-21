@@ -1,6 +1,20 @@
 import streamlit as st
 import requests
 from deep_translator import GoogleTranslator
+from openai import OpenAI
+
+client = OpenAI(
+  api_key="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"
+)
+
+response = client.responses.create(
+  model="gpt-5-nano",
+  input="write a haiku about ai",
+  store=True,
+)
+
+print(response.output_text);
+
 
 # ---------------------------
 # CONFIG
