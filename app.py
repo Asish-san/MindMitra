@@ -1,88 +1,96 @@
 import streamlit as st
-from googletrans import Translator
-from transformers import pipeline
-import random
+from deep_translator import GoogleTranslator
 
-# -----------------------------
-# Setup
-# -----------------------------
-st.set_page_config(page_title="MindMitra", page_icon="💜", layout="centered")
-st.title("💜 MindMitra — your private, multilingual wellness buddy")
+# ---------------------------
+# Page Config
+# ---------------------------
+st.set_page_config(page_title="MindMitra", page_icon="🧘", layout="wide")
 
-if "history" not in st.session_state:
-    st.session_state.history = []
+# ---------------------------
+# Initialize session state
+# ---------------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "user_input" not in st.session_state:
+    st.session_state.user_input = ""
 
-# Translator
-translator = Translator()
+# ---------------------------
+# App Title
+# ---------------------------
+st.title("🧘 MindMitra - Your Free AI Wellness Companion")
 
-# Hugging Face pipelines
-sentiment_analyzer = pipeline("sentiment-analysis")
-generator = pipeline("text-generation", model="gpt2")
+st.write(
+    "Welcome to **MindMitra**, a free AI-powered mental wellness companion. "
+    "Chat, translate your thoughts, and get supportive responses instantly."
+)
 
-# -----------------------------
-# Core function
-# -----------------------------
-def get_supportive_reply(user_text: str, lang: str = "en") -> str:
-    # Detect language
-    detected = translator.detect(user_text).lang
-    translated = translator.translate(user_text, dest="en").text
+# ---------------------------
+# Sidebar
+# ---------------------------
+st.sidebar.header("⚙️ Settings")
 
-    # Sentiment
-    sentiment = sentiment_analyzer(translated)[0]
-    label, score = sentiment["label"], sentiment["score"]
+language = st.sidebar.selectbox(
+    "Choose language for replies:",
+    ["english", "hindi", "odia", "bengali", "spanish", "french"],
+)
 
-    # Generate empathetic response
-    base_prompt = f"The user feels: {translated}. They are {label.lower()} (confidence {score:.2f}). "
-    base_prompt += "Reply kindly, like a caring friend, short and simple."
+st.sidebar.markdown("---")
+st.sidebar.write("Built with ❤️ using Streamlit and Deep-Translator.")
 
-    response = generator(base_prompt, max_length=80, num_return_sequences=1)
-    english_reply = response[0]["generated_text"].split("Reply kindly")[-1].strip()
-
-    # Translate back to original language if not English
-    if detected != "en":
-        final_reply = translator.translate(english_reply, dest=detected).text
-    else:
-        final_reply = english_reply
-
-    return final_reply
-
-# -----------------------------
-# Chat UI
-# -----------------------------
-st.markdown("### Talk to me 👇")
-col_a, col_b = st.columns([4, 1])
-
-with col_a:
-    user_input = st.text_area(
-        "You (type in any supported language)",
-        key="user_input",
-        placeholder="Type how you feel..."
+# ---------------------------
+# Core Chatbot Function
+# ---------------------------
+def get_ai_reply(prompt: str) -> str:
+    """
+    Dummy AI reply generator.
+    You can expand this later with any open-source LLM API (like HuggingFace).
+    """
+    base_reply = (
+        "I hear you. It's normal to feel this way sometimes. "
+        "Remember to breathe deeply and be kind to yourself."
     )
-with col_b:
-    send = st.button("Send", type="primary")
 
-if send:
-    msg = st.session_state.user_input.strip()
-    if msg:
-        # Save user message
-        st.session_state.history.append({"role": "user", "text": msg})
+    # Translate if not English
+    if language.lower() != "english":
+        try:
+            translated = GoogleTranslator(source="english", target=language).translate(base_reply)
+            return translated
+        except Exception:
+            return "⚠️ Translation failed. Showing English response:\n\n" + base_reply
+    return base_reply
 
-        # Generate reply
-        reply = get_supportive_reply(msg)
-        st.session_state.history.append({"role": "bot", "text": reply})
+# ---------------------------
+# Chat Input
+# ---------------------------
+user_input = st.text_input("💬 Share your thoughts:", key="chat_input")
 
-        # Clear input safely
+if st.button("Send"):
+    if user_input.strip():
+        st.session_state.messages.append({"role": "user", "content": user_input})
+
+        reply = get_ai_reply(user_input)
+        st.session_state.messages.append({"role": "ai", "content": reply})
+
         st.session_state.user_input = ""
-        st.experimental_rerun()
-
-# -----------------------------
-# Display chat
-# -----------------------------
-for chat in st.session_state.history:
-    if chat["role"] == "user":
-        st.markdown(f"🧑 **You:** {chat['text']}")
     else:
-        st.markdown(f"🤖 **MindMitra:** {chat['text']}")
+        st.warning("Please type a message before sending.")
 
+# ---------------------------
+# Display Chat
+# ---------------------------
+st.subheader("🗨️ Conversation")
+
+if len(st.session_state.messages) == 0:
+    st.info("Start the conversation by typing your first thought above.")
+else:
+    for msg in st.session_state.messages:
+        if msg["role"] == "user":
+            st.markdown(f"👤 **You:** {msg['content']}")
+        else:
+            st.markdown(f"🤖 **MindMitra:** {msg['content']}")
+
+# ---------------------------
+# Footer
+# ---------------------------
 st.markdown("---")
-st.caption("⚠️ Disclaimer: This is a supportive AI buddy, **not a medical professional**. If you feel overwhelmed, please reach out to a trusted person or counselor.")
+st.caption("© 2025 MindMitra | Free AI wellness support app")
