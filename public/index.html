@@ -1,8 +1,8 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>MindMitra (Demo)</title>
+  <title>MindMitra — private, multilingual companion</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#f7f9fc}
@@ -15,6 +15,7 @@
     .msg{padding:10px;border-radius:12px;margin:8px 0;max-width:80%}
     .me{background:#e8f0ff;margin-left:auto}
     .bot{background:#f3f6ff}
+    small{color:#475569}
   </style>
 </head>
 <body>
@@ -44,10 +45,10 @@
 
       <div id="chat" style="max-height:40vh;overflow:auto;margin-bottom:10px"></div>
 
-      <textarea id="input" placeholder="Type how you feel... (any language)"></textarea>
+      <textarea id="input" placeholder="Type how you feel... (any supported language)"></textarea>
       <div class="row">
         <button id="send">Send</button>
-        <div style="flex:1;color:#6b7280;font-size:13px">MindMitra is not a medical service. If you are in danger, call local emergency services.</div>
+        <div style="flex:1"><small>MindMitra is not a medical service. If you are in danger, call local emergency services.</small></div>
       </div>
     </div>
   </main>
@@ -81,14 +82,19 @@
         const j = await r.json();
         if (j.error) {
           addBubble('Sorry — error: ' + j.error);
+          console.error('Server returned error', j);
           return;
         }
-        addBubble(j.reply || 'No response.');
-        window.latestReply = j.reply;
-        window.latestReplyLang = j.reply_lang || 'en';
+        if (j.reply) {
+          addBubble(j.reply);
+          window.latestReply = j.reply;
+          window.latestReplyLang = j.reply_lang || 'en';
+        } else {
+          addBubble('No reply received from server.');
+        }
       } catch (e) {
-        console.error(e);
-        addBubble('Network error. Try again.');
+        console.error('Network/server error', e);
+        addBubble('Sorry — server error. Try again in a moment.');
       } finally {
         send.disabled = false;
       }
@@ -104,7 +110,7 @@
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send.click();
     });
 
-    // Web Speech API for voice input
+    // Web Speech API
     let recognition = null;
     if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -118,7 +124,7 @@
       recognition.onerror = (e) => console.warn('Speech error', e);
     } else {
       mic.disabled = true;
-      mic.title = 'Voice not supported in this browser';
+      mic.title = 'Voice not supported';
     }
 
     mic.addEventListener('click', () => {
@@ -134,7 +140,7 @@
       }
     });
 
-    // SpeechSynthesis for reply
+    // SpeechSynthesis
     function speak(text, langCode) {
       if (!('speechSynthesis' in window)) {
         alert('Speech not supported in this browser.');
@@ -150,11 +156,10 @@
       if (window.latestReply) {
         speak(window.latestReply, window.latestReplyLang || 'en-US');
       } else {
-        alert('No reply to speak yet');
+        alert('No reply yet.');
       }
     });
 
-    // default helper
     addBubble('Hi — I am MindMitra. Type or speak how you are feeling. I will listen and offer gentle support.');
   </script>
 </body>
