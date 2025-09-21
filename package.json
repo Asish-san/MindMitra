@@ -2,10 +2,12 @@
   "name": "mindmitra-free",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "18.x"
+  },
   "scripts": {
     "start": "vercel dev"
   },
-  "dependencies": {
-    "whatwg-fetch": "^3.6.2"
-  }
+  "dependencies": {}
 }
+
