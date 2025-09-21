@@ -1,127 +1,164 @@
-// api/chat.js
-// Vercel serverless function (Node 18+ runtime)
-const LIBRETRANSLATE_BASE = 'https://libretranslate.com';
-const HF_MODEL = 'google/flan-t5-base'; // small instruction-following model good for demos
-const HF_API = process.env.HF_API_TOKEN; // set in Vercel dashboard (see steps)
+// api/chat.js - Vercel Serverless
+// Uses LibreTranslate public instance for detect/translate
+// Uses Hugging Face Inference API for generation (HF token required in Vercel env as HF_API_TOKEN)
 
-function crisisCheck(textEn) {
-  if (!textEn) return false;
-  const t = textEn.toLowerCase();
-  const patterns = [
-    'suicide','kill myself','want to die','end my life','hurt myself','self harm','i will die'
-  ];
-  return patterns.some(p => t.includes(p));
+const LIBRETRANSLATE_BASE = 'https://libretranslate.com';
+const HF_MODEL = 'google/flan-t5-base'; // small instruction-following model; swap if you want
+const HF_API = process.env.HF_API_TOKEN || ''; // Put your HF token in Vercel env: HF_API_TOKEN
+
+// Crisis detection phrases (English check after translation)
+const CRISIS_PATTERNS = [
+  'suicide','kill myself','want to die','end my life','hurt myself','self harm','i will die'
+];
+
+const CRISIS_MESSAGE_EN = `I'm really sorry you're feeling this much pain. You are not alone. If you are in immediate danger, please contact your local emergency number. In India you can contact the KIRAN helpline at 1800-599-0019. If you can, please reach out to someone you trust and consider contacting a licensed professional.`;
+
+async function jsonPost(url, body) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return res;
 }
 
 async function detectLanguage(text) {
-  const res = await fetch(`${LIBRETRANSLATE_BASE}/detect`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: text })
-  });
-  const arr = await res.json();
-  if (!arr || !arr.length) return 'en';
-  return arr[0].language || 'en';
+  try {
+    const res = await jsonPost(`${LIBRETRANSLATE_BASE}/detect`, { q: text });
+    const j = await res.json();
+    if (Array.isArray(j) && j.length && j[0].language) return j[0].language;
+  } catch (e) {
+    // ignore and fallback
+  }
+  return 'en';
 }
 
 async function translate(text, source, target) {
-  if (!text) return text;
-  const res = await fetch(`${LIBRETRANSLATE_BASE}/translate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  try {
+    const res = await jsonPost(`${LIBRETRANSLATE_BASE}/translate`, {
       q: text,
       source: source || 'auto',
       target,
       format: 'text'
-    })
-  });
-  const j = await res.json();
-  if (j && j.translatedText) return j.translatedText;
-  // fallback if plain string or other shape
-  if (typeof j === 'string') return j;
-  return JSON.stringify(j);
+    });
+    const j = await res.json();
+    if (j && j.translatedText) return j.translatedText;
+    // If it returns raw string or other shape
+    if (typeof j === 'string') return j;
+    return JSON.stringify(j);
+  } catch (e) {
+    // fallback: return original text if translation fails
+    return text;
+  }
 }
 
-async function hfGenerate(prompt) {
+function crisisCheckEnglish(textEn) {
+  if (!textEn) return false;
+  const low = textEn.toLowerCase();
+  return CRISIS_PATTERNS.some(p => low.includes(p));
+}
+
+async function generateFromHF(prompt) {
   if (!HF_API) {
-    // Safe fallback if token not set
-    return `I hear you. Thanks for sharing that. Can you tell me a bit more about what's going on?`;
+    // graceful fallback if HF token not set
+    return "I hear you. Thanks for telling me that. If you want, tell me a bit more — where does this feeling show up in your day?";
   }
-  const res = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${HF_API}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      inputs: prompt,
-      parameters: { max_new_tokens: 180, temperature: 0.7 },
-      options: { wait_for_model: true }
-    })
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    console.error('HF error', res.status, text);
-    throw new Error('Generation error: ' + res.status);
+
+  // Call Hugging Face Inference API (synchronous)
+  try {
+    const res = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${HF_API}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        inputs: prompt,
+        parameters: { max_new_tokens: 200, temperature: 0.7 },
+        options: { wait_for_model: true }
+      })
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('HF error', res.status, text);
+      return null;
+    }
+    const data = await res.json();
+    // Typical responses: [{generated_text: "..."}]
+    if (Array.isArray(data) && data[0] && data[0].generated_text) return data[0].generated_text;
+    // Sometimes API returns text directly
+    if (typeof data === 'string') return data;
+    // As a fallback, try JSON shapes
+    if (Array.isArray(data) && data[0] && typeof data[0] === 'string') return data[0];
+    return JSON.stringify(data);
+  } catch (err) {
+    console.error('HF call failed', err);
+    return null;
   }
-  const data = await res.json();
-  if (Array.isArray(data) && data[0]?.generated_text) return data[0].generated_text;
-  if (Array.isArray(data) && data[0]?.generated_text === undefined && data[0]?.generated_text !== undefined) {
-    return data[0].generated_text;
-  }
-  // fallback shapes
-  if (typeof data === 'object' && data[0] && data[0].generated_text) return data[0].generated_text;
-  if (typeof data === 'string') return data;
-  return JSON.stringify(data);
+}
+
+function makeSystemPrompt() {
+  return `You are MindMitra, a calm, empathetic, non-judgmental companion for young people. Keep replies brief (2-5 sentences). Validate feelings, offer a single practical coping tip, and gently suggest seeking support (trusted person or professional) if needed. Do not diagnose or provide medical instructions. Use friendly, plain language.`;
 }
 
 export default async function handler(req, res) {
-  try {
-    if (req.method !== 'POST') return res.status(405).send({ error: 'Method not allowed' });
-    const { message, lang } = req.body || {};
-    if (!message || typeof message !== 'string' || message.trim().length === 0)
-      return res.status(400).json({ error: 'Empty message' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-    // 1) detect language (LibreTranslate)
+  try {
+    const body = await req.json();
+    const message = (body.message || '').toString().trim();
+    const requestedLang = (body.lang || '').toString().trim();
+
+    if (!message) return res.status(400).json({ error: 'Empty message' });
+
+    // 1) detect user language
     const detected = await detectLanguage(message);
 
     // 2) translate to English if needed
-    let textEn = message;
+    let messageEn = message;
     if (detected && detected !== 'en') {
-      try { textEn = await translate(message, detected, 'en'); } catch (e) { textEn = message; }
+      messageEn = await translate(message, detected, 'en');
     }
 
-    // 3) crisis check
-    const crisis = crisisCheck(textEn);
-    let replyEn;
+    // 3) crisis check in English text
+    const crisis = crisisCheckEnglish(messageEn);
+    let replyEn = '';
+
     if (crisis) {
-      replyEn = `I'm really sorry you're feeling this much pain. If you are in immediate danger, please contact your local emergency number. In India you can call KIRAN on 1800-599-0019. If possible, reach out to someone you trust and consider contacting a licensed professional.`;
+      replyEn = CRISIS_MESSAGE_EN;
     } else {
-      // build instruction prompt
-      const system = `You are MindMitra, an empathetic, non-judgmental youth support assistant. Keep responses short (2-5 sentences), validating and practical. Offer one simple coping tip and suggest seeking support if needed. Do not provide clinical diagnosis.`;
-      const prompt = `${system}\n\nUser: ${textEn}\n\nAssistant:`;
-      replyEn = await hfGenerate(prompt);
-      replyEn = (replyEn || '').trim();
+      // 4) build final prompt and call generation
+      const system = makeSystemPrompt();
+      const prompt = `${system}\n\nUser: ${messageEn}\n\nAssistant:`;
+      const gen = await generateFromHF(prompt);
+
+      if (gen === null) {
+        // generation error -> fallback empathetic reply
+        replyEn = "I understand. That sounds difficult. Can you tell me one concrete thing that just happened, or how long you've felt like this?";
+      } else {
+        replyEn = gen.toString().trim();
+      }
     }
 
-    // 4) choose output language: user requested `lang` or detected language
-    const outLang = (lang && lang.length) ? lang : detected || 'en';
+    // 5) determine reply language (requestedLang || detected)
+    let outLang = requestedLang || detected || 'en';
+    if (!outLang) outLang = 'en';
+
+    // If outLang is not English, translate reply back
     let replyOut = replyEn;
-    if (outLang && outLang !== 'en') {
-      try { replyOut = await translate(replyEn, 'en', outLang); } catch (e) { replyOut = replyEn; }
+    if (outLang !== 'en') {
+      replyOut = await translate(replyEn, 'en', outLang);
     }
 
-    // 5) return (no storage, do not save PII)
     return res.json({
       reply: replyOut,
       reply_lang: outLang,
       detected_lang: detected,
       crisis
     });
-
   } catch (err) {
-    console.error('Server error', err);
-    return res.status(500).json({ error: 'Server error' });
+    console.error('Unhandled error in /api/chat', err);
+    return res.status(500).json({ error: 'Server error', details: String(err) });
   }
 }
