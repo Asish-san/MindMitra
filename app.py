@@ -1,103 +1,87 @@
 import streamlit as st
-import requests
 from deep_translator import GoogleTranslator
-from openai import OpenAI
-
-client = OpenAI(
-  api_key="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"
-)
-
-response = client.responses.create(
-  model="gpt-5-nano",
-  input="write a haiku about ai",
-  store=True,
-)
-
-print(response.output_text);
-
 
 # ---------------------------
-# CONFIG
+# Page Config
 # ---------------------------
 st.set_page_config(page_title="MindMitra", page_icon="🧘", layout="wide")
 
-HF_API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-base"
-HF_API_KEY = st.secrets.get("HF_API_KEY", None)  # store in Streamlit Cloud secrets
-
-headers = {"Authorization": f"Bearer {HF_API_KEY}"} if HF_API_KEY else {}
-
 # ---------------------------
-# SESSION STATE
+# Initialize session state
 # ---------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "user_input" not in st.session_state:
+    st.session_state.user_input = ""
 
 # ---------------------------
-# APP TITLE
+# App Title
 # ---------------------------
-st.title("🧘 MindMitra - AI Wellness Companion")
-st.write("Your multilingual emotional support chatbot, powered by **AI & free translation**.")
+st.title("🧘 MindMitra - Your Free AI Wellness Companion")
+
+st.write(
+    "Welcome to **MindMitra**, a free AI-powered mental wellness companion. "
+    "Chat, translate your thoughts, and get supportive responses instantly."
+)
 
 # ---------------------------
-# SIDEBAR
+# Sidebar
 # ---------------------------
 st.sidebar.header("⚙️ Settings")
+
 language = st.sidebar.selectbox(
     "Choose language for replies:",
     ["english", "hindi", "odia", "bengali", "spanish", "french"],
 )
-st.sidebar.info("Using Hugging Face free LLM + Deep Translator")
+
+st.sidebar.markdown("---")
+st.sidebar.write("Built with ❤️ using Streamlit and Deep-Translator.")
 
 # ---------------------------
-# AI REPLY FUNCTION
+# Core Chatbot Function
 # ---------------------------
 def get_ai_reply(prompt: str) -> str:
-    """Fetch AI response from HuggingFace model."""
-    if not HF_API_KEY:
-        return "⚠️ HuggingFace API Key missing. Please add it in Streamlit secrets."
-
-    payload = {"inputs": f"You are a kind and supportive friend. Reply briefly: {prompt}"}
-    try:
-        response = requests.post(HF_API_URL, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-
-        if isinstance(data, list) and "generated_text" in data[0]:
-            reply = data[0]["generated_text"]
-        else:
-            reply = "I'm here for you. Please share more."
-
-    except Exception as e:
-        reply = f"⚠️ AI error: {e}"
+    """
+    Dummy AI reply generator.
+    You can expand this later with any open-source LLM API (like HuggingFace).
+    """
+    base_reply = (
+        "I hear you. It's normal to feel this way sometimes. "
+        "Remember to breathe deeply and be kind to yourself."
+    )
 
     # Translate if not English
     if language.lower() != "english":
         try:
-            reply = GoogleTranslator(source="english", target=language).translate(reply)
+            translated = GoogleTranslator(source="english", target=language).translate(base_reply)
+            return translated
         except Exception:
-            reply = reply + "\n\n(⚠️ Translation failed.)"
-
-    return reply
+            return "⚠️ Translation failed. Showing English response:\n\n" + base_reply
+    return base_reply
 
 # ---------------------------
-# CHAT INPUT
+# Chat Input
 # ---------------------------
 user_input = st.text_input("💬 Share your thoughts:", key="chat_input")
 
 if st.button("Send"):
     if user_input.strip():
         st.session_state.messages.append({"role": "user", "content": user_input})
+
         reply = get_ai_reply(user_input)
         st.session_state.messages.append({"role": "ai", "content": reply})
+
+        st.session_state.user_input = ""
     else:
         st.warning("Please type a message before sending.")
 
 # ---------------------------
-# DISPLAY CHAT
+# Display Chat
 # ---------------------------
 st.subheader("🗨️ Conversation")
-if not st.session_state.messages:
-    st.info("Start by typing your first thought above.")
+
+if len(st.session_state.messages) == 0:
+    st.info("Start the conversation by typing your first thought above.")
 else:
     for msg in st.session_state.messages:
         if msg["role"] == "user":
@@ -106,7 +90,7 @@ else:
             st.markdown(f"🤖 **MindMitra:** {msg['content']}")
 
 # ---------------------------
-# FOOTER
+# Footer
 # ---------------------------
 st.markdown("---")
 st.caption("© 2025 MindMitra | Free AI wellness support app")
