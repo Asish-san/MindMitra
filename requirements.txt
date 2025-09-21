@@ -1,2 +1,2 @@
-gradio==3.37.0
-requests
+streamlit==1.26.0
+requests==2.31.0
